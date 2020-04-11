@@ -120,8 +120,8 @@ def prune_oneshot(data:Dataset, net:Network, prune_rate:float=0.9,
 
 	print('-- Oneshot Pruning Results --\n')
 	print(f'Pruning Rate: {prune_rate}')
-	print(f'Pre-prune Accuracy:  {pre_prune_acc: 3f}%')
-	print(f'Post-prune Accuracy: {post_prune_acc: 3f}%')
+	print(f'Pre-prune Accuracy:  {pre_prune_acc: 5.1f}%')
+	print(f'Post-prune Accuracy: {post_prune_acc: 5.1f}%')
 
 	return masked_net
 
@@ -155,7 +155,7 @@ def prune_iterative(data:Dataset, net:Network, prune_rate:float=0.9,
 	print(f'Per-step Pruning Rate: {iterative_prune_rate:.3f}')
 	
 	for i in range(len(accs)):
-		print(f'Accuracy at {iterative_prune_rate * i * 100:.2f}% Pruned: {accs[i]:.2f}%')
+		print(f'Accuracy at {iterative_prune_rate * i * 100: 5.1f}% Pruned: {accs[i]:.2f}%')
 	
 	return masked_net
 		
