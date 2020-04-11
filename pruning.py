@@ -3,14 +3,16 @@ from train import train
 from datasets import Dataset, MNIST
 import functions as f
 
+from typing import Callable
 import torch
 
 
 TMP_FILE_NAME = 'tmp.pth'
 PRUNE_WHITELIST = { torch.nn.Linear, torch.nn.Conv2d }
 
+mask_func_t = Callable[[dict, float], dict]
 
-def make_mask(info:dict, rate:float):
+def lowest_magnitude_mask(info:dict, rate:float) -> dict:
 	with torch.no_grad():
 		mask = {}
 
@@ -42,10 +44,61 @@ def make_mask(info:dict, rate:float):
 			mask[name] = mask[name].view(weight.shape)
 	
 	return mask
+
+
+def block_mask(info:dict, rate:float, block_size:int=4) -> dict:
+	with torch.no_grad():
+		mask = {}
+
+		# This relies on undefined behavior (order of dict entries). Only works in python 3.6 and 3.7
+		last_module = list(info['classes'].keys())[-1]
+
+		for name, weight in info['weights'].items():
+			module_name = f.module_name(name)
+
+			# Don't prune the bias vectors
+			if name.endswith('bias'):
+				continue
+
+			# Only prune parameters from the specified modules
+			if info['classes'][module_name] not in PRUNE_WHITELIST:
+				continue
+
+			# Lottery ticket prunes last layer weights at half the rate
+			p = rate / 2 if module_name == last_module else rate
+
+			block_mag = torch.nn.functional.avg_pool2d(
+				weight.abs()[None, None, ...], block_size, ceil_mode=True)
+
+			# We will remove this many blocks from this weight
+			num_to_prune = int(p * block_mag.numel())
 			
+			# Prune the num_prune lowest magnitude block by masking them out
+			prune_indices = block_mag.view(-1).abs().argsort()[:num_to_prune]
+
+			# Create a mask on the blocks
+			bmask = torch.ones((block_mag.numel(),), device=block_mag.device, dtype=torch.float32)
+			bmask[prune_indices] = 0
+			bmask = bmask.view(block_mag.shape)
+
+			# Interpolate the block mask up to the size of the full weight matrix
+			wmask = torch.nn.functional.interpolate(bmask, scale_factor=block_size, mode='nearest')[0, 0]
+
+			# In the case that the weight matrix wasn't evenly divisible by the block size,
+			# crop the mask down to the correct size
+			crop = [slice(0, x, 1) for x in weight.shape]
+			wmask = wmask[crop]
+
+			mask[name] = wmask
+	
+	return mask
 
 
-def prune_oneshot(data:Dataset, net:Network, prune_rate:float=0.9) -> MaskedNetwork:
+
+
+
+def prune_oneshot(data:Dataset, net:Network, prune_rate:float=0.9,
+			      mask_func:mask_func_t=lowest_magnitude_mask) -> MaskedNetwork:
 	""" Prune a prune_rate fraction of the weights all at once and then retrain. """
 
 	# Temporarily save the initial weights
@@ -55,7 +108,7 @@ def prune_oneshot(data:Dataset, net:Network, prune_rate:float=0.9) -> MaskedNetw
 	pre_prune_acc = train(net, data)
 
 	# Create pruning mask
-	mask = make_mask(net.get_weights(), prune_rate)
+	mask = mask_func(net.get_weights(), prune_rate)
 
 	# Reset to the initial weights and delete the tmp file
 	net.load_weights(TMP_FILE_NAME)
@@ -74,7 +127,8 @@ def prune_oneshot(data:Dataset, net:Network, prune_rate:float=0.9) -> MaskedNetw
 
 
 
-def prune_iterative(data:Dataset, net:Network, prune_rate:float=0.9, iterations:int=5) -> MaskedNetwork:
+def prune_iterative(data:Dataset, net:Network, prune_rate:float=0.9,
+	                iterations:int=5, mask_func:mask_func_t=lowest_magnitude_mask) -> MaskedNetwork:
 	""" Prune a prune_rate fraction of the weights but do it in iterations steps. """
 	iterative_prune_rate = prune_rate / iterations
 	accs = []
@@ -86,7 +140,7 @@ def prune_iterative(data:Dataset, net:Network, prune_rate:float=0.9, iterations:
 	accs.append(train(net, data))
 
 	for i in range(iterations):
-		mask = make_mask(net.get_weights(), iterative_prune_rate * (i + 1))
+		mask = mask_func(net.get_weights(), iterative_prune_rate * (i + 1))
 		net.load_weights(TMP_FILE_NAME)
 
 		masked_net = MaskedNetwork(net, mask)
@@ -117,8 +171,17 @@ if __name__ == '__main__':
 	net = Baseline(dataset.shape, dataset.num_classes)
 	net.cuda()
 
+	# Vanilla Lottery Ticket Pruning
 	# pruned = prune_oneshot(dataset, net)
 	# pruned.save_weights('weights/pruned_oneshot.pth')
 
-	pruned = prune_iterative(dataset, net)
-	pruned.save_weights('weights/pruned_iterative.pth')
+	# pruned = prune_iterative(dataset, net)
+	# pruned.save_weights('weights/pruned_iterative.pth')
+
+	
+	# Block Pruning
+	# pruned = prune_oneshot(dataset, net, mask_func=block_mask)
+	# pruned.save_weights('weights/pruned_block_oneshot.pth')
+
+	pruned = prune_iterative(dataset, net, mask_func=block_mask)
+	pruned.save_weights('weights/pruned_block_iterative.pth')
