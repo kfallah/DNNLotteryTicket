@@ -31,7 +31,7 @@ def train(net:Network, data:datasets.Dataset, num_epochs:int=5):
 			iteration += 1
 		
 		print()
-		acc = test(net, data.train)
+		acc = test(net, data.test)
 		print(f'Test  Accuracy: {acc:.2f}%')
 		print()
 
