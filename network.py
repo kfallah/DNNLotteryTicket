@@ -2,11 +2,14 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+import numpy as np
+from scipy.sparse import csr_matrix
+
 import functions as f
 
 
 class Network(nn.Module):
-	
+
 	def __init__(self):
 		super().__init__()
 		self.device = 'cpu'
@@ -15,15 +18,15 @@ class Network(nn.Module):
 		super().to(device)
 		self.device = device
 		return self
-	
+
 	def cuda(self):
 		self.to('cuda')
 		return self
-	
+
 	def cpu(self):
 		self.to('cpu')
 		return self
-	
+
 	def get_weights(self) -> dict:
 		return {
 			'classes': {name: type(module) for name, module in self.named_modules()},
@@ -33,16 +36,16 @@ class Network(nn.Module):
 	def save_weights(self, path:str):
 		f.make_dirs(path)
 		torch.save(self.get_weights(), path)
-	
+
 	def load_weights(self, path:str, strict:bool=True):
 		if type(path) == str:
 			path = torch.load(path)
 		self.load_state_dict(path['weights'], strict=strict)
-		
+
 	def apply_mask(self, mask:dict):
 		if mask is None:
 			return
-		
+
 		with torch.no_grad():
 			for k, v in self.state_dict().items():
 				if k in mask:
@@ -54,20 +57,23 @@ class MaskedNetwork(Network):
 
 	def __init__(self, net:Network, mask:dict=None):
 		super().__init__()
-		
+
 		self.mask = mask
 		self.net = net
 
 		self.to(self.net.device)
-		
+
 		self.net.apply_mask(self.mask)
-	
+
 	def forward(self, x):
 		if self.training:
 			self.net.apply_mask(self.mask)
 
 		return self.net.forward(x)
-	
+
+	def sparse_forward(self, x):
+		return self.net.sparse_forward(x)
+
 	def loss(self, preds, y):
 		return self.net.loss(preds, y)
 
@@ -82,7 +88,7 @@ class MaskedNetwork(Network):
 
 		super().eval()
 		return self
-	
+
 	def save_weights(self, path:str):
 		weights = self.net.get_weights()
 		weights['mask'] = self.mask
@@ -90,7 +96,7 @@ class MaskedNetwork(Network):
 		f.make_dirs(path)
 		torch.save(weights, path)
 
-	
+
 
 
 
@@ -99,10 +105,10 @@ class Baseline(Network):
 	def __init__(self, input_shape:tuple, num_classes:int,
 		layer_type=nn.Linear, nonlinearity=nn.ReLU):
 		super().__init__()
-		
+
 		self.in_size  = f.prod(input_shape)
 		self.out_size = num_classes
-		
+
 		self.layers = nn.Sequential(
 			layer_type(self.in_size, 256),
 			nonlinearity(),
@@ -119,6 +125,22 @@ class Baseline(Network):
 			return x
 		else:
 			return torch.argmax(x, dim=-1)
+
+	# TODO: Test function
+	def sparse_forward(self, x):
+		x = x.view(-1, self.in_size)
+		dtype = x.dtype
+
+		for layer in self.layers:
+			if isinstance(layer, nn.Linear):
+				S = csr_matrix(layer.weight.detach().numpy())
+				x = torch.tensor(S.multiply(x.detach().numpy()).todense(),dtype=dtype) + layer.bias
+			elif isinstance(layer, nn.Conv2d):
+				# TODO: implement sparse convolution 
+			else:
+				x = layer(x)
+
+		return torch.argmax(x, dim=-1)
 
 	def loss(self, preds, y):
 		return F.cross_entropy(preds, y)
