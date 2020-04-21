@@ -114,14 +114,13 @@ class SparseLinear():
 		self.batch_size = -1
 	
 	def __call__(self, x:sparse.csr_matrix) -> sparse.csr_matrix:
-		x @= self.weight
+		x = x @ self.weight
 		
 		if self.batch_size != x.shape[0]:
 			self.batch_size = x.shape[0]
 			self.bias = make_sparse(self.dense_bias.expand(self.batch_size, -1).contiguous())
 		
 		x += self.bias
-		x._add_sparse
 		return x
 
 
