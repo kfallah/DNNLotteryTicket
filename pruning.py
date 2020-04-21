@@ -175,9 +175,12 @@ if __name__ == '__main__':
 	# pruned = prune_oneshot(dataset, net)
 	# pruned.save_weights('weights/pruned_oneshot.pth')
 
-	# pruned = prune_iterative(dataset, net)
-	# pruned.save_weights('weights/pruned_iterative.pth')
+	pruned = prune_iterative(dataset, net)
+	pruned.save_weights('weights/pruned_iterative.pth')
 
+
+	net = Baseline(dataset.shape, dataset.num_classes)
+	net.cuda()
 	
 	# Block Pruning
 	# pruned = prune_oneshot(dataset, net, mask_func=block_mask)
