@@ -44,7 +44,7 @@ class SparseReLU():
 
 class SparseNetwork():
 
-	def __init__(self, layers, batch_size=64):
+	def __init__(self, layers):
 		self.layers = []
 
 		for layer in layers:

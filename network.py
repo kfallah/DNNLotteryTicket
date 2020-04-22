@@ -6,6 +6,7 @@ import numpy as np
 
 import functions as f
 from sparse_network import SparseNetwork
+from block_network  import BlockNetwork
 
 
 
@@ -126,6 +127,9 @@ class Baseline(Network):
 
 	def sparsify(self) -> SparseNetwork:
 		return SparseNetwork(self.layers)
+	
+	def blockify(self) -> BlockNetwork:
+		return BlockNetwork(self.layers, out_channels=self.out_size, device=self.device)
 
 	def loss(self, preds, y):
 		return F.cross_entropy(preds, y)
