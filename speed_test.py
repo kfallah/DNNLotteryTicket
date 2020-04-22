@@ -5,42 +5,10 @@ import torch.optim as optim
 import time
 
 import datasets
-from network import Network, Baseline, SparseNetwork
+from network import Network, Baseline, SparseNetwork, BlockNetwork
 
 from typing import Union
-
-
-class Timer():
-	"""
-	Times the enviroment you give it and adds to the total time.
-
-	Sample Usage:
-		timer = Timer()
-
-		with timer.time():
-			# Write things to time here
-		
-		timer.total # Contains the seconds elapsed above.
-	"""
-
-	def __init__(self):
-		self.reset()
-	
-	def reset(self):
-		self.total = 0
-
-	def time(self):
-		return Timer._TimerEnv(self)
-
-	class _TimerEnv:
-		def __init__(self, timer):
-			self.timer = timer
-
-		def __enter__(self):
-			self.start_time = time.time()
-		
-		def __exit__(self, type, value, traceback):
-			self.timer.total += time.time() - self.start_time
+from functions import Timer, HiddenPrints
 			
 
 	
@@ -99,21 +67,22 @@ def benchmark_dense(net:Network, data:datasets.Dataset):
 	return time_taken, acc
 
 
-def benchmark(net:Union[Network, SparseNetwork], dataset:datasets.Dataset, batch_size:int):
-	is_dense = isinstance(net, Network)
-	num_samples = len(dataset.test.dataset)
+def benchmark(net:Union[Network, BlockNetwork, SparseNetwork], dataset:datasets.Dataset, batch_size:int):
+	is_dense = isinstance(net, Network) or isinstance(net, BlockNetwork)
 	
 	with torch.no_grad():
 		# Warm up the network (yes pytorch needs this to happen)
 		if is_dense:
 			for i in range(5):
-				net(dataset.train.dataset[0][0][None, ...].to(net.device))
+				net(dataset.train.dataset[0][0][None, ...].to(net.device).repeat(batch_size, 1, 1, 1))
 
+			# Don't leak into the benchmark time
+			try: torch.cuda.synchronize()
+			except: pass # If CUDA is not supported, we don't care.
+		
 		runtime, accuracy = benchmark_dense(net, dataset) if is_dense else benchmark_sparse(net, dataset)
 		runtime *= 1000*1000 # s -> us
-		print()
-		print(f'Average fps over {num_samples} samples with batch size {batch_size}: {runtime:.1f} us / sample.')
-		print(f'Test accuracy: {accuracy:6.2f}%')
+		print(f'{runtime:6.1f} us / sample, {accuracy:6.2f}% Test Accuracy.')
 
 
 
@@ -122,14 +91,49 @@ if __name__ == '__main__':
 	batch_size = 64
 	dataset = datasets.MNIST(batch_size=batch_size)
 
-	net = Baseline(dataset.shape, dataset.num_classes)
-	net.load_weights('weights/pruned_block_iterative.pth')
-	net.cpu()
+	tests = [
+		('CUDA Random Weights',       'weights/random_init.pth',            'cuda'),
+		('CUDA Pruned Weights',       'weights/pruned_iterative.pth',       'cuda'),
+		('CUDA Block Pruned Weights', 'weights/pruned_block_iterative.pth', 'cuda'),
 
-	# Test the pytorch network, change params in the block above ^^^
-	benchmark(net, dataset, batch_size)
+		(' CPU Random Weights',       'weights/random_init.pth',            'cpu'),
+		(' CPU Pruned Weights',       'weights/pruned_iterative.pth',       'cpu'),
+		(' CPU Block Pruned Weights', 'weights/pruned_block_iterative.pth', 'cpu'),
+	]
+	
+	print()
+	print(f'Benchmarking with batch_size={batch_size} and {len(dataset.test.dataset)} samples.')
+	print()
 
-	# Do the sparse stuff
-	sparsenet = net.sparsify()
-	benchmark(sparsenet, dataset, batch_size)
+	blocknets = []
+
+	for name, weights_path, device in tests:
+		with HiddenPrints(stderr=True):
+			net = Baseline(dataset.shape, dataset.num_classes)
+			net.load_weights(weights_path)
+			net.to(device)
+
+		print(f' ---- {name} ----')
+		
+		print('Vanilla Pytorch: ', end='')
+		benchmark(net, dataset, batch_size)
+		
+		print('  Block Network: ', end='')
+		blocknet = net.blockify()
+		benchmark(blocknet, dataset, batch_size)
+
+		print('   Scipy Sparse: ', end='')
+		if device == 'cpu':
+			sparsenet = net.sparsify()
+			benchmark(sparsenet, dataset, batch_size)
+		else:
+			print('                   N/A')
+
+		print()
+
+		# For whatever reason, when python garbage collects a blocknet it crashes.
+		# Because I don't want to debug a double free / segfault (in fucking python like wtf),
+		# which is likely internal to pytorch, I'm just going to make sure that blocknets never
+		# go out of scope and put them in this list. Fight me.
+		blocknets.append(blocknet)
 

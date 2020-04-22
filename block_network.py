@@ -32,8 +32,8 @@ def block_expand(x:torch.Tensor) -> torch.Tensor:
 class BlockLinear():
 
 	def __init__(self, weight:torch.Tensor, bias:torch.Tensor):
-		weight    = block_expand(weight)
-		self.bias = block_expand(bias)[None, ...]
+		weight    = block_expand(weight.clone())
+		self.bias = block_expand(bias.clone())[None, ...]
 
 		block_mask = F.avg_pool2d(weight.abs()[None, None], BLOCK_SIZE, ceil_mode=True)[0, 0] > EPS
 		
@@ -87,8 +87,8 @@ class BlockLinear():
 	def _reset_batch_size(self, batch_size:int):
 		self.batch_size = batch_size
 
-		self.batch_block_weight = self.block_weight.repeat(batch_size, 1, 1)
-		self.batch_gather_idx   = self.gather_idx[None, ...].repeat(batch_size, 1, 1)
+		self.batch_block_weight = self.block_weight.repeat(batch_size, 1, 1).contiguous()
+		self.batch_gather_idx   = self.gather_idx[None, ...].repeat(batch_size, 1, 1).contiguous()
 
 
 

@@ -8,8 +8,9 @@ from collections import deque
 import math
 import datetime
 import random
+import time
 
-import os, shutil
+import os, shutil, sys
 
 def load_image(path:str, device:str='cpu') -> torch.Tensor:
 	""" Loads an image and returns it in float [0, 1] format with shape [1, c, h, w]. """
@@ -128,3 +129,58 @@ def seed_all(seed:int):
 	torch.manual_seed(seed)
 	torch.cuda.manual_seed(seed)
 	np.random.seed(seed)
+
+
+
+# Also not a function...
+class Timer():
+	"""
+	Times the enviroment you give it and adds to the total time.
+
+	Sample Usage:
+		timer = Timer()
+
+		with timer.time():
+			# Write things to time here
+		
+		timer.total # Contains the seconds elapsed above.
+	"""
+
+	def __init__(self):
+		self.reset()
+	
+	def reset(self):
+		self.total = 0
+
+	def time(self):
+		return Timer._TimerEnv(self)
+
+	class _TimerEnv:
+		def __init__(self, timer):
+			self.timer = timer
+
+		def __enter__(self):
+			self.start_time = time.time()
+		
+		def __exit__(self, type, value, traceback):
+			self.timer.total += time.time() - self.start_time
+
+
+# Neither is this?
+class HiddenPrints:
+	def __init__(self, stderr:bool=False):
+		self.stderr = stderr
+
+	def __enter__(self):
+		self._original_stdout = sys.stdout
+		sys.stdout = open(os.devnull, 'w')
+
+		if self.stderr:
+			self._original_stderr = sys.stderr
+			sys.stderr = sys.stdout
+
+	def __exit__(self, exc_type, exc_val, exc_tb):
+		sys.stdout.close()
+		sys.stdout = self._original_stdout
+		if self.stderr:
+			sys.stderr = self._original_stderr
