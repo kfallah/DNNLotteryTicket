@@ -114,11 +114,15 @@ class BlockNetwork():
 				print(f'Warning: No block layer implemented for {type(layer)}.')
 
 	def __call__(self, x:torch.Tensor) -> torch.Tensor:
+		batch_size = x.shape[0]
+		x = x.view(batch_size, -1)
+		
+		x = block_expand(x)
 
 		for layer in self.layers:
 			x = layer(x)
 
-		return x[:, :self.out_channels].argmax(dim=-1)
+		return x[:batch_size, :self.out_channels].argmax(dim=-1)
 
 	# Dummy function so this can be treated as a Network
 	def eval(self):

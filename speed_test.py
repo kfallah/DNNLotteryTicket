@@ -6,6 +6,7 @@ import time
 
 import datasets
 from network import Network, Baseline, SparseNetwork, BlockNetwork
+import block_network
 
 from typing import Union
 from functions import Timer, HiddenPrints
@@ -99,6 +100,12 @@ if __name__ == '__main__':
 		(' CPU Random Weights',       'weights/random_init.pth',            'cpu'),
 		(' CPU Pruned Weights',       'weights/pruned_iterative.pth',       'cpu'),
 		(' CPU Block Pruned Weights', 'weights/pruned_block_iterative.pth', 'cpu'),
+
+		# (' CUDA Block Size = 2',        'weights/pruned_block2_iterative.pth' , 'cuda'),
+		# (' CUDA Block Size = 4',        'weights/pruned_block4_iterative.pth' , 'cuda'),
+		# (' CUDA Block Size = 8',        'weights/pruned_block8_iterative.pth' , 'cuda'),
+		# ('CUDA Block Size = 16',        'weights/pruned_block16_iterative.pth', 'cuda'),
+		# ('CUDA Block Size = 32',        'weights/pruned_block32_iterative.pth', 'cuda'),
 	]
 	
 	print()
@@ -119,6 +126,7 @@ if __name__ == '__main__':
 		benchmark(net, dataset, batch_size)
 		
 		print('  Block Network: ', end='')
+		block_network.BLOCK_SIZE = int(name.split(' ')[-1])
 		blocknet = net.blockify()
 		benchmark(blocknet, dataset, batch_size)
 

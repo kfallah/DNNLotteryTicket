@@ -168,23 +168,34 @@ def prune_iterative(data:Dataset, net:Network, prune_rate:float=0.9,
 if __name__ == '__main__':
 	dataset = MNIST()
 
-	net = Baseline(dataset.shape, dataset.num_classes)
-	net.cuda()
+	# net = Baseline(dataset.shape, dataset.num_classes)
+	# net.cuda()
 
 	# Vanilla Lottery Ticket Pruning
 	# pruned = prune_oneshot(dataset, net)
 	# pruned.save_weights('weights/pruned_oneshot.pth')
 
-	pruned = prune_iterative(dataset, net)
-	pruned.save_weights('weights/pruned_iterative.pth')
+	# pruned = prune_iterative(dataset, net)
+	# pruned.save_weights('weights/pruned_iterative.pth')
 
 
-	net = Baseline(dataset.shape, dataset.num_classes)
-	net.cuda()
+	# net = Baseline(dataset.shape, dataset.num_classes)
+	# net.cuda()
 	
 	# Block Pruning
 	# pruned = prune_oneshot(dataset, net, mask_func=block_mask)
 	# pruned.save_weights('weights/pruned_block_oneshot.pth')
 
-	pruned = prune_iterative(dataset, net, mask_func=block_mask)
-	pruned.save_weights('weights/pruned_block_iterative.pth')
+	# pruned = prune_iterative(dataset, net, mask_func=block_mask)
+	# pruned.save_weights('weights/pruned_block_iterative.pth')
+
+	for block_size in (2, 8, 16, 32):
+
+		print()
+		print(f'PRUNING WITH BLOCK SIZE {block_size}.')
+		print()
+		net = Baseline(dataset.shape, dataset.num_classes)
+		net.cuda()
+
+		pruned = prune_iterative(dataset, net, mask_func=lambda a, b: block_mask(a, b, block_size=block_size))
+		pruned.save_weights(f'weights/pruned_block{block_size}_iterative.pth')
